@@ -1,0 +1,17 @@
+agent:
+  name: "Trading Agent v0.1.0"
+  mode: paper
+  log_level: INFO
+
+portfolio:
+  initial_capital: 10000
+  max_total_exposure: 0.6
+  max_correlated_bots: 2
+  emergency_stop_drawdown: 0.30
+  reserve_ratio: 0.10
+
+risk:
+  max_leverage: 2.0
+  risk_per_trade: 0.02
+  max_drawdown_pause: 0.20
+  pause_hours: 12

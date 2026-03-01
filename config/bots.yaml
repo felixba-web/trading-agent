@@ -1,0 +1,8 @@
+bots:
+  - id: "ema_cross_btc"
+    name: "EMA Cross BTC"
+    strategy: "ema_cross"
+    symbol: "BTC/USDT"
+    timeframe: "1h"
+    capital: 1000
+    active: true
