@@ -8,7 +8,7 @@ import pandas as pd
 from datetime import datetime
 
 
-def fetch_ohlcv(symbol: str = "BTC/USDT", timeframe: str = "1h", limit: int = 500) -> pd.DataFrame:
+def fetch_ohlcv(symbol: str = "BTC/USDT", timeframe: str = "1h", limit: int = 1000) -> pd.DataFrame:
     exchange = ccxt.binance({
         "enableRateLimit": True,
     })
@@ -27,10 +27,9 @@ def fetch_ohlcv(symbol: str = "BTC/USDT", timeframe: str = "1h", limit: int = 50
 
 
 def fetch_multi_timeframe(symbol: str = "BTC/USDT") -> dict:
-    """Holt 1H und 4H Daten gleichzeitig"""
     return {
-        "1h": fetch_ohlcv(symbol, "1h", 500),
-        "4h": fetch_ohlcv(symbol, "4h", 200),
+        "1h": fetch_ohlcv(symbol, "1h", 1000),
+        "4h": fetch_ohlcv(symbol, "4h", 500),
     }
 
 
@@ -38,5 +37,3 @@ if __name__ == "__main__":
     data = fetch_multi_timeframe()
     print("\n📊 1H Letzte 3 Kerzen:")
     print(data["1h"].tail(3).to_string())
-    print("\n📊 4H Letzte 3 Kerzen:")
-    print(data["4h"].tail(3).to_string())
