@@ -12,6 +12,7 @@ class DivHunter(BaseBot):
     ATR_PERIOD    = 14
     VOLUME_PERIOD = 20
     DIV_LOOKBACK  = 5
+    MIN_SCORE     = 10
 
     def __init__(self, capital):
         super().__init__("DivHunter", "bearish", capital)
@@ -36,10 +37,10 @@ class DivHunter(BaseBot):
         result = pd.Series(False, index=df.index)
         n = self.DIV_LOOKBACK
         for i in range(n, len(df)):
-            window_price = df["close"].iloc[i-n:i+1]
-            window_rsi   = df["rsi"].iloc[i-n:i+1]
-            if (df["close"].iloc[i] > window_price.iloc[:-1].max() and
-                    df["rsi"].iloc[i] < window_rsi.iloc[:-1].max()):
+            wp = df["close"].iloc[i-n:i+1]
+            wr = df["rsi"].iloc[i-n:i+1]
+            if (df["close"].iloc[i] > wp.iloc[:-1].max() and
+                    df["rsi"].iloc[i] < wr.iloc[:-1].max()):
                 result.iloc[i] = True
         return result
 
@@ -47,10 +48,10 @@ class DivHunter(BaseBot):
         result = pd.Series(False, index=df.index)
         n = self.DIV_LOOKBACK
         for i in range(n, len(df)):
-            window_price = df["close"].iloc[i-n:i+1]
-            window_rsi   = df["rsi"].iloc[i-n:i+1]
-            if (df["close"].iloc[i] < window_price.iloc[:-1].min() and
-                    df["rsi"].iloc[i] > window_rsi.iloc[:-1].min()):
+            wp = df["close"].iloc[i-n:i+1]
+            wr = df["rsi"].iloc[i-n:i+1]
+            if (df["close"].iloc[i] < wp.iloc[:-1].min() and
+                    df["rsi"].iloc[i] > wr.iloc[:-1].min()):
                 result.iloc[i] = True
         return result
 
@@ -60,16 +61,14 @@ class DivHunter(BaseBot):
         details["regime"] = 3 if regime_ok else 0
         score += details["regime"]
         bearish_div = bool(row["bearish_div"])
-        bullish_div = bool(row["bullish_div"])
-        if bearish_div:
-            action = "sell"
-            details["divergence"] = 3
-        elif bullish_div:
-            action = "buy"
-            details["divergence"] = 3
+        if regime == "bearish":
+            action = "sell" if bearish_div else "hold"
         else:
-            action = "hold"
-            details["divergence"] = 0
+            bullish_div = bool(row["bullish_div"])
+            if bearish_div: action = "sell"
+            elif bullish_div: action = "buy"
+            else: action = "hold"
+        details["divergence"] = 3 if action != "hold" else 0
         score += details["divergence"]
         macd_ok = (action == "sell" and float(row["macd_hist"]) < 0) or \
                   (action == "buy"  and float(row["macd_hist"]) > 0)

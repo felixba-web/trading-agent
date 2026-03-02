@@ -12,7 +12,6 @@ class BandBouncer(BaseBot):
     RSI_OS        = 35
     ATR_PERIOD    = 14
     VOLUME_PERIOD = 20
-    BB_WIDTH_MIN  = 0.01
 
     def __init__(self, capital):
         super().__init__("BandBouncer", "sideways", capital)
@@ -37,17 +36,18 @@ class BandBouncer(BaseBot):
         regime_ok = regime == "sideways"
         details["regime"] = 3 if regime_ok else 0
         score += details["regime"]
-        price     = float(row["close"])
-        bb_lower  = float(row["bb_lower"])
-        bb_upper  = float(row["bb_upper"])
-        bb_mid    = float(row["bb_mid"])
-        rsi       = float(row["rsi"])
+        price    = float(row["close"])
+        bb_lower = float(row["bb_lower"])
+        bb_upper = float(row["bb_upper"])
+        rsi      = float(row["rsi"])
         near_lower = price <= bb_lower * 1.005
         near_upper = price >= bb_upper * 0.995
-        if near_lower:
+        reversal_up   = float(row["close"]) > float(prev["close"])
+        reversal_down = float(row["close"]) < float(prev["close"])
+        if near_lower and reversal_up:
             action = "buy"
             details["bb_signal"] = 3
-        elif near_upper:
+        elif near_upper and reversal_down:
             action = "sell"
             details["bb_signal"] = 3
         else:
@@ -57,29 +57,32 @@ class BandBouncer(BaseBot):
         bb_flat = bool(row["bb_flat"]) if not pd.isna(row["bb_flat"]) else False
         details["bb_flat"] = 2 if bb_flat else 0
         score += details["bb_flat"]
-        rsi_ok = (action == "buy" and rsi < self.RSI_OS + 10) or \
-                 (action == "sell" and rsi > self.RSI_OB - 10)
+        rsi_ok = (action == "buy"  and rsi < self.RSI_OS + 15) or \
+                 (action == "sell" and rsi > self.RSI_OB - 15)
         details["rsi"] = 2 if rsi_ok else 0
         score += details["rsi"]
         details["volume"] = 1 if bool(row["volume_ok"]) else 0
         score += details["volume"]
-        prev_closer = (action == "buy" and float(prev["close"]) < price) or \
-                      (action == "sell" and float(prev["close"]) > price)
-        details["reversal"] = 1 if prev_closer else 0
-        score += details["reversal"]
+        rsi_turning = (action == "buy"  and float(row["rsi"]) > float(prev["rsi"])) or \
+                      (action == "sell" and float(row["rsi"]) < float(prev["rsi"]))
+        details["rsi_turning"] = 1 if rsi_turning else 0
+        score += details["rsi_turning"]
         if not (regime_ok and action != "hold" and score >= self.MIN_SCORE):
             action = "hold"
         return {"score": score, "action": action,
                 "reason": f"BandBouncer {score}/13", "details": details, "rsi": rsi}
 
     def calculate_stops(self, row, action):
-        atr   = float(row["atr"])
-        price = float(row["close"])
+        atr    = float(row["atr"])
+        price  = float(row["close"])
         bb_mid = float(row["bb_mid"])
         if action == "buy":
-            return price - atr * self.ATR_STOP, bb_mid
+            stop   = price - atr * self.ATR_STOP
+            target = max(bb_mid, price + atr * 1.5)
         else:
-            return price + atr * self.ATR_STOP, bb_mid
+            stop   = price + atr * self.ATR_STOP
+            target = min(bb_mid, price - atr * 1.5)
+        return stop, target
 
     def _rsi(self, c):
         d = c.diff()
