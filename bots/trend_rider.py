@@ -7,6 +7,7 @@ from bots.base_bot import BaseBot
 class TrendRider(BaseBot):
     EMA_FAST      = 21
     EMA_SLOW      = 55
+    EMA_TREND     = 200
     RSI_PERIOD    = 14
     RSI_MIN       = 45
     RSI_MAX       = 70
@@ -20,40 +21,56 @@ class TrendRider(BaseBot):
     def compute_indicators(self, df):
         c, v = df["close"], df["volume"]
         d = df.copy()
-        d["ema_fast"]  = c.ewm(span=self.EMA_FAST, adjust=False).mean()
-        d["ema_slow"]  = c.ewm(span=self.EMA_SLOW, adjust=False).mean()
-        d["rsi"]       = self._rsi(c)
-        d["volume_ma"] = v.rolling(self.VOLUME_PERIOD).mean()
-        d["volume_ok"] = v > d["volume_ma"]
-        d["atr"]       = self._atr(d)
+        d["ema_fast"]   = c.ewm(span=self.EMA_FAST, adjust=False).mean()
+        d["ema_slow"]   = c.ewm(span=self.EMA_SLOW, adjust=False).mean()
+        d["ema_trend"]  = c.ewm(span=self.EMA_TREND, adjust=False).mean()
+        d["rsi"]        = self._rsi(c)
+        d["volume_ma"]  = v.rolling(self.VOLUME_PERIOD).mean()
+        d["volume_ok"]  = v > d["volume_ma"]
+        d["atr"]        = self._atr(d)
         d["st_up"], d["st_down"], d["supertrend"] = self._supertrend(d)
         return d
 
     def score_signal(self, row, prev, regime):
         score, details = 0, {}
+
+        # PFLICHT 1: Regime bullish
         regime_ok = regime == "bullish"
         details["regime"] = 3 if regime_ok else 0
         score += details["regime"]
+
+        # PFLICHT 2: EMA Cross up
         ema_cross = (float(prev["ema_fast"]) <= float(prev["ema_slow"]) and
                      float(row["ema_fast"])  >  float(row["ema_slow"]))
         details["ema_cross"] = 3 if ema_cross else 0
         score += details["ema_cross"]
-        st_ok = float(row["supertrend"]) == 1
-        details["supertrend"] = 2 if st_ok else 0
-        score += details["supertrend"]
+
+        # EMPFOHLEN 1: Preis über EMA200 ← neuer Filter
+        above_ema200 = float(row["close"]) > float(row["ema_trend"])
+        details["ema200"] = 2 if above_ema200 else 0
+        score += details["ema200"]
+
+        # EMPFOHLEN 2: RSI im Bereich
         rsi = float(row["rsi"])
         details["rsi"] = 2 if self.RSI_MIN <= rsi <= self.RSI_MAX else 0
         score += details["rsi"]
+
+        # BONUS 1: Supertrend bullish
+        details["supertrend"] = 1 if float(row["supertrend"]) == 1 else 0
+        score += details["supertrend"]
+
+        # BONUS 2: Volume bestätigt
         details["volume"] = 1 if bool(row["volume_ok"]) else 0
         score += details["volume"]
-        details["ema_rising"] = 1 if float(row["ema_fast"]) > float(prev["ema_fast"]) else 0
-        score += details["ema_rising"]
-        action = "buy" if (regime_ok and ema_cross and score >= self.MIN_SCORE) else "hold"
+
+        # EMA200 ist Pflicht — kein Trade ohne
+        action = "buy" if (regime_ok and ema_cross and above_ema200 and score >= self.MIN_SCORE) else "hold"
+
         return {"score": score, "action": action,
                 "reason": f"TrendRider {score}/13", "details": details, "rsi": rsi}
 
     def calculate_stops(self, row, action):
-        atr = float(row["atr"])
+        atr   = float(row["atr"])
         price = float(row["close"])
         return price - atr * self.ATR_STOP, price + atr * self.ATR_TARGET
 
