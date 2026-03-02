@@ -9,6 +9,8 @@ from bots.div_hunter import DivHunter
 from modules.logger import TradeLogger
 
 class Orchestrator:
+    SWITCH_COOLDOWN = 3  # Kerzen warten nach Switch
+
     def __init__(self, capital=10000, log_dir="logs"):
         third = round(capital / 3, 2)
         self.regime_detector = RegimeDetector()
@@ -17,10 +19,11 @@ class Orchestrator:
             "sideways": BandBouncer(third),
             "bearish":  DivHunter(third),
         }
-        self.active_regime = None
-        self.logger        = TradeLogger(log_dir)
-        self.capital       = capital
-        self.switches      = 0
+        self.active_regime  = None
+        self.logger         = TradeLogger(log_dir)
+        self.capital        = capital
+        self.switches       = 0
+        self.cooldown_left  = 0
 
     def _activate(self, regime):
         if regime == self.active_regime:
@@ -31,18 +34,19 @@ class Orchestrator:
         if regime in self.bots:
             self.bots[regime].activate()
         self.active_regime = regime
+        self.cooldown_left = self.SWITCH_COOLDOWN
         self.switches += 1
 
     def run(self, symbol="BTC/USDT"):
         print("=" * 55)
         print("  Trading Agent — 3-Spur System")
         print(f"  Kapital: {self.capital} USDT (je Spur: {round(self.capital/3)})")
+        print(f"  Cooldown nach Switch: {self.SWITCH_COOLDOWN} Kerzen")
         print("=" * 55)
 
         data  = fetch_multi_timeframe(symbol)
         df_4h = self.regime_detector.compute_all(data["4h"])
 
-        # Indikatoren für alle Bots
         df = {}
         for regime, bot in self.bots.items():
             df[regime] = bot.compute_indicators(data["1h"])
@@ -51,13 +55,24 @@ class Orchestrator:
         print(f"\n🔍 Scanne {len(df['bullish']) - start} Kerzen...\n")
 
         for i in range(start, len(df["bullish"])):
-            ts  = df["bullish"].index[i]
+            ts = df["bullish"].index[i]
 
             # Regime Update
             past_4h = df_4h[df_4h.index <= ts]
             if not past_4h.empty:
-                result = {"regime": past_4h.iloc[-1]["regime"]}
-                self._activate(result["regime"])
+                new_regime = past_4h.iloc[-1]["regime"]
+                self._activate(new_regime)
+
+            # Cooldown zählen
+            if self.cooldown_left > 0:
+                self.cooldown_left -= 1
+                # Alle Bots ticken aber aktiver Bot darf keine neuen Trades
+                for regime, bot in self.bots.items():
+                    if bot.open_trade:
+                        row  = df[regime].iloc[i]
+                        prev = df[regime].iloc[i-1]
+                        bot.tick(ts, row, prev, "cooldown")
+                continue
 
             # Alle 3 Bots ticken
             for regime, bot in self.bots.items():
@@ -65,7 +80,6 @@ class Orchestrator:
                 prev = df[regime].iloc[i-1]
                 bot.tick(ts, row, prev, self.active_regime or "neutral")
 
-        # Ergebnis
         self._print_results()
 
     def _print_results(self):
@@ -73,6 +87,7 @@ class Orchestrator:
         print("  3-SPUR BACKTEST ERGEBNIS")
         print("=" * 55)
         print(f"  Regime Switches: {self.switches}")
+        print(f"  Cooldown:        {self.SWITCH_COOLDOWN} Kerzen")
         print()
         total_pnl = 0
         for regime, bot in self.bots.items():
